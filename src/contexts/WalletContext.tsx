@@ -1,9 +1,12 @@
 import { createArtifactStore } from "@/lib/create-artifact-store";
-import { getEncryptionKeyFromPassword, setEncryptionKeyFromPassword } from "@/lib/encription-keys";
+import {
+  getEncryptionKeyFromPassword,
+  setEncryptionKeyFromPassword,
+} from "@/lib/encription-keys";
 import {
   NETWORK_CONFIG,
   NetworkName,
-  RailgunWalletInfo
+  RailgunWalletInfo,
 } from "@railgun-community/shared-models";
 import {
   createRailgunWallet,
@@ -11,12 +14,18 @@ import {
   POIList,
   refreshBalances,
   setLoggers,
-  startRailgunEngine
+  startRailgunEngine,
 } from "@railgun-community/wallet";
 import { randomBytes } from "crypto";
 import { Mnemonic } from "ethers";
 import LevelDB from "level-js";
-import { createContext, ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
 // Set up loggers (optional)
 setLoggers(
@@ -25,11 +34,11 @@ setLoggers(
 );
 
 interface WalletState {
-  wallet: RailgunWalletInfo | null
-  isEngineStarted: boolean
-  isLoading: boolean
-  error: string | null
-  balances: Record<string, bigint>
+  wallet: RailgunWalletInfo | null;
+  isEngineStarted: boolean;
+  isLoading: boolean;
+  error: string | null;
+  balances: Record<string, bigint>;
 }
 
 type MapType<T> = Partial<Record<string, T>>;
@@ -39,11 +48,11 @@ const creationBlockNumberMap: MapType<number> = {
 };
 
 interface WalletContextType extends WalletState {
-  initializeEngine: () => Promise<void>
-  createWallet: (password: string, mnemonic?: string) => Promise<void>
-  loadExistingWallet: (walletID: string, password?: string) => Promise<void>
-  refreshWalletBalances: () => Promise<void>
-  resetWallet: () => void
+  initializeEngine: () => Promise<void>;
+  createWallet: (password: string, mnemonic?: string) => Promise<void>;
+  loadExistingWallet: (walletID: string, password?: string) => Promise<void>;
+  refreshWalletBalances: () => Promise<void>;
+  resetWallet: () => void;
 }
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
@@ -57,16 +66,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
     isEngineStarted: false,
     isLoading: false,
     error: null,
-    balances: {}
-  })
+    balances: {},
+  });
   const updateState = (updates: Partial<WalletState>) => {
     setState((prev) => ({ ...prev, ...updates }));
   };
 
   const initializeEngine = async () => {
     try {
-      updateState({ isLoading: true, error: null })
-      
+      updateState({ isLoading: true, error: null });
+
       // Name for your wallet implementation.
       // Encrypted and viewable in private transaction history.
       // Maximum of 16 characters, lowercase.
@@ -109,7 +118,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       // Set to true if you would like to view verbose logs for private balance and TXID scans
       const verboseScanLogging = false;
 
-
       await startRailgunEngine(
         walletSource,
         db,
@@ -122,37 +130,39 @@ export function WalletProvider({ children }: WalletProviderProps) {
         verboseScanLogging
       );
 
-
       // // Set up event listeners
       // EngineEvent.on(EngineEvent.Type.WalletCreated, (eventData: WalletCreatedEvent) => {
       //   console.log('Wallet created:', eventData.walletID)
       // })
 
       // EngineEvent.on(EngineEvent.Type.RailgunBalancesUpdated, (eventData: RailgunBalancesEvent) => {
-      //   updateState({ 
+      //   updateState({
       //     balances: eventData.balances.reduce((acc, balance) => {
       //       acc[balance.tokenAddress] = balance.amount
       //       return acc
       //     }, {} as Record<string, bigint>)
       //   })
       // })
-      updateState({ isEngineStarted: true, isLoading: false })
+      updateState({ isEngineStarted: true, isLoading: false });
     } catch (error) {
-      console.error('Engine initialization error:', error)
-      updateState({ 
-        error: error instanceof Error ? error.message : 'Failed to initialize Railgun engine',
-        isLoading: false 
-      })
+      console.error("Engine initialization error:", error);
+      updateState({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to initialize Railgun engine",
+        isLoading: false,
+      });
     }
-  }
+  };
 
   const createWallet = async (
     password: string,
-    mnemonic?: string,
+    mnemonic?: string
   ): Promise<void> => {
     if (!state.isEngineStarted) {
-        throw new Error('Railgun engine not started')
-      }
+      throw new Error("Railgun engine not started");
+    }
     try {
       mnemonic =
         mnemonic || Mnemonic.fromEntropy(randomBytes(16)).phrase.trim();
@@ -166,7 +176,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         creationBlockNumberMap
       );
 
-      localStorage.setItem('railgun_wallet_id', walletInfo.id);
+      localStorage.setItem("railgun_wallet_id", walletInfo.id);
 
       updateState({
         wallet: {
@@ -175,7 +185,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         },
         isLoading: false,
       });
-
     } catch (error) {
       updateState({
         error:
@@ -186,55 +195,63 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   };
 
-  const loadExistingWallet = async (password: string = '') => {
-  try {
-    if (!state.isEngineStarted) {
-      throw new Error('Railgun engine not started');
+  const loadExistingWallet = async (password: string = "") => {
+    try {
+      if (!state.isEngineStarted) {
+        throw new Error("Railgun engine not started");
+      }
+
+      updateState({ isLoading: true, error: null });
+
+      const walletID = localStorage.getItem("railgun_wallet_id");
+      if (!walletID) {
+        throw new Error("No wallet ID found in local storage");
+      }
+
+      const encryptionKey = await getEncryptionKeyFromPassword(password);
+      const railgunWallet: RailgunWalletInfo = await loadWalletByID(
+        encryptionKey,
+        walletID,
+        true
+      );
+      if (!railgunWallet) {
+        throw new Error("Failed to load wallet");
+      }
+
+      updateState({
+        wallet: {
+          id: railgunWallet.id,
+          railgunAddress: railgunWallet.railgunAddress,
+        },
+        isLoading: false,
+      });
+    } catch (error) {
+      console.error("Wallet loading error:", error);
+      updateState({
+        error: error instanceof Error ? error.message : "Failed to load wallet",
+        isLoading: false,
+      });
     }
-
-    updateState({ isLoading: true, error: null });
-
-    const walletID = localStorage.getItem('railgun_wallet_id');
-    if (!walletID) {
-      throw new Error('No wallet ID found in local storage');
-    }
-
-    const encryptionKey = await getEncryptionKeyFromPassword(password);
-    const railgunWallet: RailgunWalletInfo = await loadWalletByID(encryptionKey, walletID, true);
-    if (!railgunWallet) {
-      throw new Error('Failed to load wallet');
-    }
-
-    updateState({
-      wallet: {
-        id: railgunWallet.id,
-        railgunAddress: railgunWallet.railgunAddress,
-      },
-      isLoading: false,
-    });
-  } catch (error) {
-    console.error('Wallet loading error:', error);
-    updateState({
-      error: error instanceof Error ? error.message : 'Failed to load wallet',
-      isLoading: false,
-    });
-  }
-};
+  };
 
   const refreshWalletBalances = async () => {
     try {
       if (!state.wallet?.railgunAddress) {
-        return
+        return;
       }
 
-      await refreshBalances(NETWORK_CONFIG[NetworkName.EthereumSepolia].chain, state.wallet.id);
+      await refreshBalances(
+        NETWORK_CONFIG[NetworkName.EthereumSepolia].chain,
+        state.wallet.id
+      );
     } catch (error) {
-      console.error('Balance refresh error:', error)
+      console.error("Balance refresh error:", error);
       updateState({
-        error: error instanceof Error ? error.message : 'Failed to refresh balances'
-      })
+        error:
+          error instanceof Error ? error.message : "Failed to refresh balances",
+      });
     }
-  }
+  };
 
   const resetWallet = () => {
     setState({
@@ -242,18 +259,18 @@ export function WalletProvider({ children }: WalletProviderProps) {
       isEngineStarted: false,
       isLoading: false,
       error: null,
-      balances: {}
-    })
-  }
+      balances: {},
+    });
+  };
 
   useEffect(() => {
-    initializeEngine()
-    
+    initializeEngine();
+
     // Cleanup on unmount
     return () => {
       // Clean up event listeners if needed
-    }
-  }, [])
+    };
+  }, []);
 
   const contextValue: WalletContextType = {
     ...state,
@@ -261,8 +278,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     createWallet,
     loadExistingWallet,
     refreshWalletBalances,
-    resetWallet
-  }
+    resetWallet,
+  };
   return (
     <WalletContext.Provider value={contextValue}>
       {children}

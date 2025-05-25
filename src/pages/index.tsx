@@ -4,7 +4,7 @@ import WalletSetup from '@/components/WalletSetup';
 import { useWallet } from '@/contexts/WalletContext';
 
 export default function Home() {
-  const { wallet, isEngineStarted, isLoading, error } = useWallet();
+  const { wallet, isEngineStarted, isLoading, error, loadExistingWallet } = useWallet();
 
   if (isLoading) {
     return (
