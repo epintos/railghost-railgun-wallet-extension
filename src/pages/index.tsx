@@ -1,10 +1,22 @@
 import LoadingSpinner from '@/components/LoadingSpinner';
+import PasswordPrompt from '@/components/PasswordPrompt';
 import WalletDashboard from '@/components/WalletDashboard';
 import WalletSetup from '@/components/WalletSetup';
 import { useWallet } from '@/contexts/WalletContext';
+import { useEffect, useState } from 'react';
 
 export default function Home() {
-  const { wallet, isEngineStarted, isLoading, error, loadExistingWallet } = useWallet();
+  const { wallet, isEngineStarted, isLoading, error, loadExistingWallet, resetWallet } = useWallet();
+  const [hasCheckedLocalStorage, setHasCheckedLocalStorage] = useState(false);
+  const [hasExistingWallet, setHasExistingWallet] = useState(false);
+
+  useEffect(() => {
+    if (isEngineStarted && !wallet && !hasCheckedLocalStorage) {
+      const walletID = localStorage.getItem("railgun_wallet_id");
+      setHasExistingWallet(!!walletID);
+      setHasCheckedLocalStorage(true);
+    }
+  }, [isEngineStarted, wallet, hasCheckedLocalStorage]);
 
   if (isLoading) {
     return (
@@ -34,6 +46,10 @@ export default function Home() {
         </div>
       </div>
     )
+  }
+
+  if (hasExistingWallet && !wallet) {
+    return <PasswordPrompt onUnlock={loadExistingWallet} onReset={() => resetWallet()} />;
   }
 
   return (

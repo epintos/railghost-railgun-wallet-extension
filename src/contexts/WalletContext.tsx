@@ -195,7 +195,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   };
 
-  const loadExistingWallet = async (password: string = "") => {
+  const loadExistingWallet = async (password: string) => {
     try {
       if (!state.isEngineStarted) {
         throw new Error("Railgun engine not started");
@@ -212,7 +212,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       const railgunWallet: RailgunWalletInfo = await loadWalletByID(
         encryptionKey,
         walletID,
-        true
+        false
       );
       if (!railgunWallet) {
         throw new Error("Failed to load wallet");
@@ -231,6 +231,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         error: error instanceof Error ? error.message : "Failed to load wallet",
         isLoading: false,
       });
+      throw error; // Re-throw the error so the PasswordPrompt can handle it
     }
   };
 
@@ -256,11 +257,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const resetWallet = () => {
     setState({
       wallet: null,
-      isEngineStarted: false,
+      isEngineStarted: true,
       isLoading: false,
       error: null,
       balances: {},
     });
+    localStorage.removeItem("railgun_wallet_id");
+    localStorage.removeItem("railgun_salt");
+    localStorage.removeItem("railgun_password_verifier");
   };
 
   useEffect(() => {

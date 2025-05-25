@@ -168,12 +168,12 @@ export default function WalletSetup() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Private Key or Seed Phrase
+                Seed Phrase
               </label>
               <textarea
                 value={privateKey}
                 onChange={(e) => setPrivateKey(e.target.value)}
-                placeholder="Enter your private key or seed phrase"
+                placeholder="Enter your seed phrase"
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 rows={3}
               />
