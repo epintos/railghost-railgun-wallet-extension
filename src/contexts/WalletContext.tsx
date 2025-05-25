@@ -1,5 +1,5 @@
 import { createArtifactStore } from "@/lib/create-artifact-store";
-import { setEncryptionKeyFromPassword } from "@/lib/set-encryption-key-from-password";
+import { getEncryptionKeyFromPassword, setEncryptionKeyFromPassword } from "@/lib/encription-keys";
 import {
   NETWORK_CONFIG,
   NetworkName,
@@ -166,6 +166,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
         creationBlockNumberMap
       );
 
+      localStorage.setItem('railgun_wallet_id', walletInfo.id);
+
       updateState({
         wallet: {
           id: walletInfo.id,
@@ -184,34 +186,40 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   };
 
-  const loadExistingWallet = async (walletID: string, password: string = '') => {
-    try {
-      if (!state.isEngineStarted) {
-        throw new Error('Railgun engine not started')
-      }
-
-      updateState({ isLoading: true, error: null })
-
-      const railgunWallet: RailgunWalletInfo = await loadWalletByID(password, walletID, true)
-      if (!railgunWallet) {
-        throw new Error('Failed to load wallet')
-      }
-
-      updateState({
-        wallet: {
-          id: railgunWallet.id,
-          railgunAddress: railgunWallet.railgunAddress,
-        },
-        isLoading: false,
-      });
-    } catch (error) {
-      console.error('Wallet loading error:', error)
-      updateState({
-        error: error instanceof Error ? error.message : 'Failed to load wallet',
-        isLoading: false
-      })
+  const loadExistingWallet = async (password: string = '') => {
+  try {
+    if (!state.isEngineStarted) {
+      throw new Error('Railgun engine not started');
     }
+
+    updateState({ isLoading: true, error: null });
+
+    const walletID = localStorage.getItem('railgun_wallet_id');
+    if (!walletID) {
+      throw new Error('No wallet ID found in local storage');
+    }
+
+    const encryptionKey = await getEncryptionKeyFromPassword(password);
+    const railgunWallet: RailgunWalletInfo = await loadWalletByID(encryptionKey, walletID, true);
+    if (!railgunWallet) {
+      throw new Error('Failed to load wallet');
+    }
+
+    updateState({
+      wallet: {
+        id: railgunWallet.id,
+        railgunAddress: railgunWallet.railgunAddress,
+      },
+      isLoading: false,
+    });
+  } catch (error) {
+    console.error('Wallet loading error:', error);
+    updateState({
+      error: error instanceof Error ? error.message : 'Failed to load wallet',
+      isLoading: false,
+    });
   }
+};
 
   const refreshWalletBalances = async () => {
     try {
