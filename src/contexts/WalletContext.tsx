@@ -55,7 +55,7 @@ type TokenBalanceInfo = {
   balance: string;
 };
 
-interface WalletInfo extends RailgunWalletInfo {
+export interface WalletInfo extends RailgunWalletInfo {
   balances: Record<string, TokenBalanceInfo>;
   publicBalances: Record<string, TokenBalanceInfo>;
   publicAddress: string;
@@ -107,6 +107,11 @@ const supportedTokens = [
     address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
     decimals: 18,
   },
+  {
+    symbol: "USDC",
+    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    decimals: 6,
+  }
 ];
 
 export function WalletProvider({ children }: WalletProviderProps) {
