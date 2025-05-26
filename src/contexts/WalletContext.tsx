@@ -111,7 +111,7 @@ const supportedTokens = [
     symbol: "USDC",
     address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     decimals: 6,
-  }
+  },
 ];
 
 export function WalletProvider({ children }: WalletProviderProps) {
@@ -169,7 +169,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       const customPOILists: POIList[] | undefined = undefined;
 
       // Set to true if you would like to view verbose logs for private balance and TXID scans
-      const verboseScanLogging = false;
+      const verboseScanLogging = true;
 
       await startRailgunEngine(
         walletSource,
@@ -182,6 +182,55 @@ export function WalletProvider({ children }: WalletProviderProps) {
         customPOILists,
         verboseScanLogging
       );
+
+      setOnBalanceUpdateCallback(
+        async (balancesFormatted: RailgunBalancesEvent) => {
+          console.log("setOnBalanceUpdateCallback");
+          if (!state.wallet) {
+            console.warn("no wallet");
+            return;
+          }
+
+          if (balancesFormatted.railgunWalletID !== state.wallet.id) {
+            console.warn("Balance update does not match active wallet");
+            return;
+          }
+
+          const newBalances: Record<string, TokenBalanceInfo> = {};
+          const symbolPromises = balancesFormatted.erc20Amounts.map(
+            async (erc20) => {
+              try {
+                const tokenContract = new Contract(
+                  erc20.tokenAddress,
+                  ERC20_ABI
+                );
+                const symbol: string = await tokenContract.symbol();
+                const decimals: string = await tokenContract.decimals();
+                newBalances[symbol] = {
+                  tokenAddress: erc20.tokenAddress,
+                  decimals: parseInt(decimals, 10),
+                  balance: ethers.formatUnits(
+                    erc20.amount,
+                    parseInt(decimals, 10)
+                  ),
+                };
+              } catch (err) {
+                console.warn(
+                  `Failed to fetch symbol for token ${erc20.tokenAddress}`,
+                  err
+                );
+              }
+            }
+          );
+
+          await Promise.all(symbolPromises);
+
+          state.wallet.balances = newBalances;
+          updateState({ wallet: state.wallet });
+        }
+      );
+      setOnUTXOMerkletreeScanCallback(onUTXOMerkletreeScanCallback);
+      setOnTXIDMerkletreeScanCallback(onTXIDMerkletreeScanCallback);
 
       updateState({ isEngineStarted: true, isLoading: false });
     } catch (error) {
@@ -320,7 +369,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       await refreshBalances(
         NETWORK_CONFIG[NetworkName.EthereumSepolia].chain,
-        walletId
+        [walletId]
       );
     } catch (error) {
       console.error("Balance refresh error:", error);
@@ -423,56 +472,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   };
 
   useEffect(() => {
-    initializeEngine().then(() => {
-      setOnBalanceUpdateCallback(
-        async (balancesFormatted: RailgunBalancesEvent) => {
-          console.log("setOnBalanceUpdateCallback");
-          if (!state.wallet) {
-            console.warn("no wallet");
-            return;
-          }
-
-          if (balancesFormatted.railgunWalletID !== state.wallet.id) {
-            console.warn("Balance update does not match active wallet");
-            return;
-          }
-
-          const newBalances: Record<string, TokenBalanceInfo> = {};
-          const symbolPromises = balancesFormatted.erc20Amounts.map(
-            async (erc20) => {
-              try {
-                const tokenContract = new Contract(
-                  erc20.tokenAddress,
-                  ERC20_ABI
-                );
-                const symbol: string = await tokenContract.symbol();
-                const decimals: string = await tokenContract.decimals();
-                newBalances[symbol] = {
-                  tokenAddress: erc20.tokenAddress,
-                  decimals: parseInt(decimals, 10),
-                  balance: ethers.formatUnits(
-                    erc20.amount,
-                    parseInt(decimals, 10)
-                  ),
-                };
-              } catch (err) {
-                console.warn(
-                  `Failed to fetch symbol for token ${erc20.tokenAddress}`,
-                  err
-                );
-              }
-            }
-          );
-
-          await Promise.all(symbolPromises);
-
-          state.wallet.balances = newBalances;
-          updateState({ wallet: state.wallet });
-        }
-      );
-      setOnUTXOMerkletreeScanCallback(onUTXOMerkletreeScanCallback);
-      setOnTXIDMerkletreeScanCallback(onTXIDMerkletreeScanCallback);
-    });
+    initializeEngine();
 
     // Cleanup on unmount
     return () => {
