@@ -4,17 +4,27 @@ import {
   getEncryptionKeyFromPassword,
   setEncryptionKeyFromPassword,
 } from "@/lib/encription-keys";
+import { getBalance, getETHBalance, sendTransaction } from "@/lib/erc20-tokens";
 import {
+  EVMGasType,
+  getEVMGasTypeForTransaction,
   MerkletreeScanUpdateEvent,
   NETWORK_CONFIG,
   NetworkName,
   RailgunBalancesEvent,
+  RailgunERC20AmountRecipient,
   RailgunWalletInfo,
+  TransactionGasDetails,
+  TXIDVersion,
 } from "@railgun-community/shared-models";
 import {
   createRailgunWallet,
+  gasEstimateForShield,
+  getShieldPrivateKeySignatureMessage,
+  getWalletMnemonic,
   loadWalletByID,
   POIList,
+  populateShield,
   refreshBalances,
   setLoggers,
   setOnBalanceUpdateCallback,
@@ -23,7 +33,7 @@ import {
   startRailgunEngine,
 } from "@railgun-community/wallet";
 import { randomBytes } from "crypto";
-import { Contract, Mnemonic } from "ethers";
+import { Contract, ethers, keccak256, Mnemonic, Wallet } from "ethers";
 import LevelDB from "level-js";
 import {
   createContext,
@@ -39,8 +49,17 @@ setLoggers(
   (error: string) => console.error(error)
 );
 
+type TokenBalanceInfo = {
+  tokenAddress: string;
+  decimals: number;
+  balance: string;
+};
+
 interface WalletInfo extends RailgunWalletInfo {
-  balances: Record<string, bigint>;
+  balances: Record<string, TokenBalanceInfo>;
+  publicBalances: Record<string, TokenBalanceInfo>;
+  publicAddress: string;
+  mnemonic: string;
 }
 
 interface WalletState {
@@ -60,14 +79,35 @@ interface WalletContextType extends WalletState {
   initializeEngine: () => Promise<void>;
   createWallet: (password: string, mnemonic?: string) => Promise<void>;
   loadExistingWallet: (walletID: string, password?: string) => Promise<void>;
-  refreshWalletBalances: (walletId: string) => Promise<void>;
+  refreshPrivateBalances: (walletId: string) => Promise<void>;
+  refreshPublicBalances(
+    publicAddress: string
+  ): Promise<Record<string, TokenBalanceInfo>>;
   resetWallet: () => void;
+  shieldToken: (
+    tokenAddress: string,
+    amount: string,
+    decimals: number
+  ) => Promise<void>;
 }
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 interface WalletProviderProps {
   children: ReactNode;
 }
+
+const supportedTokens = [
+  {
+    symbol: "LINK",
+    address: "0x779877a7b0d9e8603169ddbd7836e478b4624789",
+    decimals: 18,
+  },
+  {
+    symbol: "WETH",
+    address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+    decimals: 18,
+  },
+];
 
 export function WalletProvider({ children }: WalletProviderProps) {
   const [state, setState] = useState<WalletState>({
@@ -171,18 +211,24 @@ export function WalletProvider({ children }: WalletProviderProps) {
         creationBlockNumberMap
       );
 
+      const publicWallet = new Wallet(mnemonic);
+
       localStorage.setItem("railgun_wallet_id", walletInfo.id);
+      const publicBalances = await refreshPublicBalances(publicWallet.address);
 
       updateState({
         wallet: {
           id: walletInfo.id,
           railgunAddress: walletInfo.railgunAddress,
           balances: {},
+          publicBalances: publicBalances,
+          mnemonic,
+          publicAddress: publicWallet.address,
         },
         isLoading: false,
       });
 
-      await refreshWalletBalances(walletInfo.id);
+      await refreshPrivateBalances(walletInfo.id);
     } catch (error) {
       updateState({
         error:
@@ -198,7 +244,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       if (!state.isEngineStarted) {
         throw new Error("Railgun engine not started");
       }
-
       updateState({ isLoading: true, error: null });
 
       const walletID = localStorage.getItem("railgun_wallet_id");
@@ -207,6 +252,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
 
       const encryptionKey = await getEncryptionKeyFromPassword(password);
+      const mnemonic = await getWalletMnemonic(encryptionKey, walletID);
       const railgunWallet: RailgunWalletInfo = await loadWalletByID(
         encryptionKey,
         walletID,
@@ -215,15 +261,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
       if (!railgunWallet) {
         throw new Error("Failed to load wallet");
       }
+      const publicWallet = Wallet.fromPhrase(mnemonic);
+      const publicBalances = await refreshPublicBalances(publicWallet.address);
       updateState({
         wallet: {
           id: railgunWallet.id,
           railgunAddress: railgunWallet.railgunAddress,
           balances: {},
+          publicBalances: publicBalances,
+          mnemonic,
+          publicAddress: publicWallet.address,
         },
         isLoading: false,
       });
-      await refreshWalletBalances(railgunWallet.id);
+      await refreshPrivateBalances(railgunWallet.id);
     } catch (error) {
       updateState({
         error: error instanceof Error ? error.message : "Failed to load wallet",
@@ -232,7 +283,36 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   };
 
-  const refreshWalletBalances = async (walletId: string) => {
+  const refreshPublicBalances = async (
+    publicAddress: string
+  ): Promise<Record<string, TokenBalanceInfo>> => {
+    const balances: Record<string, TokenBalanceInfo> = {};
+    for (const token of supportedTokens) {
+      const balance = await getBalance(
+        token.address,
+        publicAddress,
+        token.decimals
+      );
+      balances[token.symbol] = {
+        tokenAddress: token.address,
+        decimals: token.decimals,
+        balance,
+      };
+    }
+    balances["ETH"] = {
+      tokenAddress: "ETH",
+      decimals: 18,
+      balance: await getETHBalance(publicAddress),
+    };
+
+    if (state.wallet) {
+      state.wallet.publicBalances = balances;
+      updateState({ wallet: state.wallet });
+    }
+    return balances;
+  };
+
+  const refreshPrivateBalances = async (walletId: string) => {
     try {
       await refreshBalances(
         NETWORK_CONFIG[NetworkName.EthereumSepolia].chain,
@@ -259,6 +339,85 @@ export function WalletProvider({ children }: WalletProviderProps) {
     localStorage.removeItem("railgun_password_verifier");
   };
 
+  const shieldToken = async (
+    tokenAddress: string,
+    amount: string,
+    decimals: number
+  ) => {
+    if (!state.wallet) {
+      throw new Error("No active wallet to shield tokens");
+    }
+    updateState({ isLoading: true, error: null });
+
+    try {
+      const publicWallet = Wallet.fromPhrase(state.wallet.mnemonic);
+      const shieldSignatureMessage = getShieldPrivateKeySignatureMessage();
+      const shieldPrivateKey = keccak256(
+        await publicWallet.signMessage(shieldSignatureMessage)
+      );
+      const erc20AmountRecipients: RailgunERC20AmountRecipient[] = [
+        {
+          tokenAddress,
+          amount: ethers.parseUnits(amount, decimals),
+          recipientAddress: state.wallet.railgunAddress,
+        },
+      ];
+
+      const { gasEstimate } = await gasEstimateForShield(
+        TXIDVersion.V2_PoseidonMerkle,
+        NetworkName.EthereumSepolia,
+        shieldPrivateKey,
+        erc20AmountRecipients,
+        [], // nftAmountRecipients
+        publicWallet.address
+      );
+
+      const evmGasType: EVMGasType = getEVMGasTypeForTransaction(
+        NetworkName.EthereumSepolia,
+        true // Always true for Shield transactions
+      );
+      let gasDetails: TransactionGasDetails;
+
+      switch (evmGasType) {
+        case EVMGasType.Type0:
+        case EVMGasType.Type1:
+          gasDetails = {
+            evmGasType,
+            gasEstimate,
+            gasPrice: BigInt("0x100000"), // TODO
+          };
+          break;
+        case EVMGasType.Type2:
+          gasDetails = {
+            evmGasType,
+            gasEstimate,
+            maxFeePerGas: BigInt("0x100000"), // TODO
+            maxPriorityFeePerGas: BigInt("0x010000"), // TODO
+          };
+          break;
+      }
+
+      const { transaction } = await populateShield(
+        TXIDVersion.V2_PoseidonMerkle,
+        NetworkName.EthereumSepolia,
+        shieldPrivateKey,
+        erc20AmountRecipients,
+        [], // nftAmountRecipients
+        gasDetails
+      );
+
+      // Public wallet to shield from.
+      transaction.from = publicWallet.address;
+      await sendTransaction(state.wallet.mnemonic, transaction);
+    } catch (error) {
+      updateState({
+        error:
+          error instanceof Error ? error.message : "Failed to shield token",
+        isLoading: false,
+      });
+    }
+  };
+
   useEffect(() => {
     initializeEngine().then(() => {
       console.log("done init");
@@ -275,7 +434,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
             return;
           }
 
-          const newBalances: Record<string, bigint> = {};
+          const newBalances: Record<string, TokenBalanceInfo> = {};
           const symbolPromises = balancesFormatted.erc20Amounts.map(
             async (erc20) => {
               try {
@@ -284,13 +443,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
                   ERC20_ABI
                 );
                 const symbol: string = await tokenContract.symbol();
-                newBalances[symbol] = erc20.amount;
+                const decimals: string = await tokenContract.decimals();
+                newBalances[symbol] = {
+                  tokenAddress: erc20.tokenAddress,
+                  decimals: parseInt(decimals, 10),
+                  balance: ethers.formatUnits(
+                    erc20.amount,
+                    parseInt(decimals, 10)
+                  ),
+                };
               } catch (err) {
                 console.warn(
                   `Failed to fetch symbol for token ${erc20.tokenAddress}`,
                   err
                 );
-                newBalances[erc20.tokenAddress] = erc20.amount; // fallback
               }
             }
           );
@@ -316,8 +482,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     initializeEngine,
     createWallet,
     loadExistingWallet,
-    refreshWalletBalances,
+    refreshPrivateBalances,
+    refreshPublicBalances,
     resetWallet,
+    shieldToken,
   };
   return (
     <WalletContext.Provider value={contextValue}>
