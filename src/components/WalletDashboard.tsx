@@ -346,10 +346,10 @@ export default function WalletDashboard() {
             <div className="bg-gradient-to-r from-blue-600/20 to-cyan-600/20 rounded-xl p-6 mb-6 border border-blue-500/20">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-sm font-medium text-blue-300 mb-1">
+                  {/* <h2 className="text-sm font-medium text-blue-300 mb-1">
                     Public Balance
-                  </h2>
-                  <p className="text-3xl font-bold text-white">$3,700</p>
+                  </h2> */}
+                  {/* <p className="text-3xl font-bold text-white">$3,700</p> */}
                   <p className="text-xs text-gray-400 mt-2">
                     0x...{wallet.railgunAddress.slice(-4)}
                   </p>
@@ -416,7 +416,7 @@ export default function WalletDashboard() {
                         </p>
                         <p className="text-xs text-gray-400"> {token.balance.toString()}</p>
                       </div>
-                      <button onClick={() => handleShieldAssets(symbol, token.balance, token.tokenAddress, token.decimals)} className="bg-white/10 hover:bg-white/20 text-white text-xs font-medium py-1.5 px-3 rounded-full">
+                      <button disabled={symbol==="ETH" || token.balance === "0.0"} onClick={() => handleShieldAssets(symbol, token.balance, token.tokenAddress, token.decimals)} className="bg-white/10 hover:bg-white/20 text-white text-xs font-medium py-1.5 px-3 rounded-full">
                         Shield
                       </button>
                     </div>
