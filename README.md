@@ -13,6 +13,8 @@ The wallet is not complete, as it is missing some basic flows, but it allows the
 - Display private and public funds
 - Approve and shield an ERC-20 public token
 
+You can find a web demo [here](https://railghost-railgun-wallet-extension-l8it6bws4.vercel.app)
+
 # Screenshots
 
 <div style="display: flex; gap: 10px;">
