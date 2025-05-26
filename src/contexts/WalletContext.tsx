@@ -225,12 +225,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
       });
       await refreshWalletBalances(railgunWallet.id);
     } catch (error) {
-      console.error("Wallet loading error:", error);
       updateState({
         error: error instanceof Error ? error.message : "Failed to load wallet",
         isLoading: false,
       });
-      throw error; // Re-throw the error so the PasswordPrompt can handle it
     }
   };
 
