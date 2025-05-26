@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
     unoptimized: true
   },
   basePath: '',
-  assetPrefix: './next',
+  assetPrefix: '.',
   experimental: {
     esmExternals: false
   },

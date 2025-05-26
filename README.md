@@ -15,7 +15,7 @@ The wallet is not complete, as it is missing some basic flows, but it allows the
 
 You can find a web demo [here](https://railghost-railgun-wallet-extension-l8it6bws4.vercel.app)
 
-# Screenshots
+## Web Screenshots
 
 <div style="display: flex; gap: 10px;">
   <img src="./public/setup.png" alt="Setup" width="200" />
@@ -26,3 +26,19 @@ You can find a web demo [here](https://railghost-railgun-wallet-extension-l8it6b
   <img src="./public/approve.png" alt="Approve" width="200" />
   <img src="./public/not-approved.png" alt="NotApproved" width="200" />
 </div>
+
+## Extension Screenshots
+
+<div style="display: flex; gap: 10px;">
+  <img src="./public/extension.png" alt="Extension" width="200" />
+</div>
+
+## How to
+
+Build extension:
+```bash
+  pnpm install
+  pnpm build
+  pnpm build:extension
+```
+

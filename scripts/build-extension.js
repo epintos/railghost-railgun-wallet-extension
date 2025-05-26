@@ -1,6 +1,45 @@
 const fs = require("fs-extra");
 const path = require("path");
-const { exec } = require("child_process");
+
+function recursivelyFixNextPaths(dir) {
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+
+    if (stat.isDirectory()) {
+      recursivelyFixNextPaths(filePath);
+    } else if (
+      file.endsWith(".js") ||
+      file.endsWith(".html") ||
+      file.endsWith(".json")
+    ) {
+      let content = fs.readFileSync(filePath, "utf8");
+      if (content.includes("/_next/")) {
+        const updated = content.replace(/\/_next\//g, "/next/");
+        fs.writeFileSync(filePath, updated);
+        console.log(`✅ Rewrote /_next/ → /next/ in ${filePath}`);
+      }
+    }
+  }
+}
+async function patchNextPaths(dir) {
+  const files = await fs.readdir(dir);
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const stat = await fs.stat(filePath);
+    if (stat.isDirectory()) {
+      await patchNextPaths(filePath);
+    } else if (file.endsWith(".js") || file.endsWith(".json")) {
+      let content = await fs.readFile(filePath, "utf8");
+      if (content.includes("/_next/")) {
+        content = content.replace(/\/_next\//g, "/next/");
+        await fs.writeFile(filePath, content, "utf8");
+        console.log(`Patched ${filePath}`);
+      }
+    }
+  }
+}
 
 async function buildExtension() {
   const rootDir = path.join(__dirname, "..");
@@ -26,11 +65,6 @@ async function buildExtension() {
     path.join(distDir, "popup.html")
   );
 
-  const popupPath = path.join(distDir, "popup.html");
-  let popupHtml = await fs.readFile(popupPath, "utf-8");
-  popupHtml = popupHtml.replace(/_next\//g, "");
-  await fs.writeFile(popupPath, popupHtml);
-
   // Copy _next static files (to next/static/)
   await fs.copy(path.join(outDir, "_next"), path.join(distDir, "next"));
 
@@ -39,6 +73,9 @@ async function buildExtension() {
     path.join(publicDir, "manifest.json"),
     path.join(distDir, "manifest.json")
   );
+
+  recursivelyFixNextPaths(distDir);
+  patchNextPaths(path.join(distDir, "next", "static"));
 
   // Create a simple background script
   const backgroundScript = `
@@ -53,29 +90,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 `;
   await fs.writeFile(path.join(distDir, "background.js"), backgroundScript);
 
-  console.log("✅ Chrome extension build complete!");
+  console.log("Chrome extension build complete!");
   console.log(
-    "👉 Load it by opening chrome://extensions, enabling Developer Mode, and loading the dist/ folder."
+    "Load it by opening chrome://extensions, enabling Developer Mode, and loading the dist/ folder."
   );
 }
-
-function runCommand(command) {
-  return new Promise((resolve, reject) => {
-    exec(
-      command,
-      { cwd: path.join(__dirname, "..") },
-      (err, stdout, stderr) => {
-        if (err) {
-          console.error(stderr);
-          return reject(err);
-        }
-        console.log(stdout);
-        resolve();
-      }
-    );
-  });
-}
-
 buildExtension().catch((err) => {
-  console.error("❌ Build failed:", err);
+  console.error(" Build failed:", err);
 });
