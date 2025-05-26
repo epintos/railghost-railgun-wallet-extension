@@ -1,11 +1,14 @@
+import ERC20_ABI from "@/abis/ERC20.json";
 import { createArtifactStore } from "@/lib/create-artifact-store";
 import {
   getEncryptionKeyFromPassword,
   setEncryptionKeyFromPassword,
 } from "@/lib/encription-keys";
 import {
+  MerkletreeScanUpdateEvent,
   NETWORK_CONFIG,
   NetworkName,
+  RailgunBalancesEvent,
   RailgunWalletInfo,
 } from "@railgun-community/shared-models";
 import {
@@ -14,10 +17,13 @@ import {
   POIList,
   refreshBalances,
   setLoggers,
+  setOnBalanceUpdateCallback,
+  setOnTXIDMerkletreeScanCallback,
+  setOnUTXOMerkletreeScanCallback,
   startRailgunEngine,
 } from "@railgun-community/wallet";
 import { randomBytes } from "crypto";
-import { Mnemonic } from "ethers";
+import { Contract, Mnemonic } from "ethers";
 import LevelDB from "level-js";
 import {
   createContext,
@@ -33,12 +39,15 @@ setLoggers(
   (error: string) => console.error(error)
 );
 
+interface WalletInfo extends RailgunWalletInfo {
+  balances: Record<string, bigint>;
+}
+
 interface WalletState {
-  wallet: RailgunWalletInfo | null;
+  wallet: WalletInfo | null;
   isEngineStarted: boolean;
   isLoading: boolean;
   error: string | null;
-  balances: Record<string, bigint>;
 }
 
 type MapType<T> = Partial<Record<string, T>>;
@@ -51,7 +60,7 @@ interface WalletContextType extends WalletState {
   initializeEngine: () => Promise<void>;
   createWallet: (password: string, mnemonic?: string) => Promise<void>;
   loadExistingWallet: (walletID: string, password?: string) => Promise<void>;
-  refreshWalletBalances: () => Promise<void>;
+  refreshWalletBalances: (walletId: string) => Promise<void>;
   resetWallet: () => void;
 }
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -66,7 +75,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     isEngineStarted: false,
     isLoading: false,
     error: null,
-    balances: {},
   });
   const updateState = (updates: Partial<WalletState>) => {
     setState((prev) => ({ ...prev, ...updates }));
@@ -98,7 +106,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       // Whether to skip merkletree syncs and private balance scans.
       // Only set to TRUE in shield-only applications that don't
       // load private wallets or balances.
-      const skipMerkletreeScans = false; // TODO
+      const skipMerkletreeScans = false;
 
       // Array of aggregator node urls for Private Proof of Innocence (Private POI), in order of priority.
       // Only one is required. If multiple urls are provided, requests will fall back to lower priority aggregator nodes if primary request fails.
@@ -109,11 +117,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
       // of transactions or actors considered undesirable by respective wallet providers.
       // For more information: https://docs.railgun.org/wiki/assurance/private-proofs-of-innocence
       // (additional developer information coming soon).
-      const poiNodeURLs = ["..."]; // TODO
+      const poiNodeURLs = ["https://poi-node.terminal-wallet.com"]; // TODO
 
       // Add a custom list to check Proof of Innocence against.
       // Leave blank to use the default list for the aggregator node provided.
-      const customPOILists: POIList[] = [];
+      const customPOILists: POIList[] | undefined = undefined;
 
       // Set to true if you would like to view verbose logs for private balance and TXID scans
       const verboseScanLogging = false;
@@ -130,19 +138,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         verboseScanLogging
       );
 
-      // // Set up event listeners
-      // EngineEvent.on(EngineEvent.Type.WalletCreated, (eventData: WalletCreatedEvent) => {
-      //   console.log('Wallet created:', eventData.walletID)
-      // })
-
-      // EngineEvent.on(EngineEvent.Type.RailgunBalancesUpdated, (eventData: RailgunBalancesEvent) => {
-      //   updateState({
-      //     balances: eventData.balances.reduce((acc, balance) => {
-      //       acc[balance.tokenAddress] = balance.amount
-      //       return acc
-      //     }, {} as Record<string, bigint>)
-      //   })
-      // })
       updateState({ isEngineStarted: true, isLoading: false });
     } catch (error) {
       console.error("Engine initialization error:", error);
@@ -182,9 +177,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
         wallet: {
           id: walletInfo.id,
           railgunAddress: walletInfo.railgunAddress,
+          balances: {},
         },
         isLoading: false,
       });
+
+      await refreshWalletBalances(walletInfo.id);
     } catch (error) {
       updateState({
         error:
@@ -217,14 +215,15 @@ export function WalletProvider({ children }: WalletProviderProps) {
       if (!railgunWallet) {
         throw new Error("Failed to load wallet");
       }
-
       updateState({
         wallet: {
           id: railgunWallet.id,
           railgunAddress: railgunWallet.railgunAddress,
+          balances: {},
         },
         isLoading: false,
       });
+      await refreshWalletBalances(railgunWallet.id);
     } catch (error) {
       console.error("Wallet loading error:", error);
       updateState({
@@ -235,15 +234,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   };
 
-  const refreshWalletBalances = async () => {
+  const refreshWalletBalances = async (walletId: string) => {
     try {
-      if (!state.wallet?.railgunAddress) {
-        return;
-      }
-
       await refreshBalances(
         NETWORK_CONFIG[NetworkName.EthereumSepolia].chain,
-        state.wallet.id
+        walletId
       );
     } catch (error) {
       console.error("Balance refresh error:", error);
@@ -260,7 +255,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       isEngineStarted: true,
       isLoading: false,
       error: null,
-      balances: {},
     });
     localStorage.removeItem("railgun_wallet_id");
     localStorage.removeItem("railgun_salt");
@@ -268,13 +262,56 @@ export function WalletProvider({ children }: WalletProviderProps) {
   };
 
   useEffect(() => {
-    initializeEngine();
+    initializeEngine().then(() => {
+      console.log("done init");
+      setOnBalanceUpdateCallback(
+        async (balancesFormatted: RailgunBalancesEvent) => {
+          console.log("setOnBalanceUpdateCallback");
+          if (!state.wallet) {
+            console.warn("no wallet");
+            return;
+          }
+
+          if (balancesFormatted.railgunWalletID !== state.wallet.id) {
+            console.warn("Balance update does not match active wallet");
+            return;
+          }
+
+          const newBalances: Record<string, bigint> = {};
+          const symbolPromises = balancesFormatted.erc20Amounts.map(
+            async (erc20) => {
+              try {
+                const tokenContract = new Contract(
+                  erc20.tokenAddress,
+                  ERC20_ABI
+                );
+                const symbol: string = await tokenContract.symbol();
+                newBalances[symbol] = erc20.amount;
+              } catch (err) {
+                console.warn(
+                  `Failed to fetch symbol for token ${erc20.tokenAddress}`,
+                  err
+                );
+                newBalances[erc20.tokenAddress] = erc20.amount; // fallback
+              }
+            }
+          );
+
+          await Promise.all(symbolPromises);
+
+          state.wallet.balances = newBalances;
+          updateState({ wallet: state.wallet });
+        }
+      );
+      setOnUTXOMerkletreeScanCallback(onUTXOMerkletreeScanCallback);
+      setOnTXIDMerkletreeScanCallback(onTXIDMerkletreeScanCallback);
+    });
 
     // Cleanup on unmount
     return () => {
       // Clean up event listeners if needed
     };
-  }, []);
+  }, [state.wallet]);
 
   const contextValue: WalletContextType = {
     ...state,
@@ -290,6 +327,18 @@ export function WalletProvider({ children }: WalletProviderProps) {
     </WalletContext.Provider>
   );
 }
+
+const onUTXOMerkletreeScanCallback = (eventData: MerkletreeScanUpdateEvent) => {
+  // Will get called throughout a private balance scan.
+  // Handle updates on scan progress and status here, i.e. progress bar or loading indicator in the UI.
+  console.log("onUTXOMerkletreeScanCallback");
+};
+
+const onTXIDMerkletreeScanCallback = (eventData: MerkletreeScanUpdateEvent) => {
+  // Will get called throughout a private balance scan.
+  // Handle updates on scan progress and status here, i.e. progress bar or loading indicator in the UI.
+  console.log("onTXIDMerkletreeScanCallback");
+};
 
 export function useWallet() {
   const context = useContext(WalletContext);
