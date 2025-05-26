@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true
   },
+  basePath: '',
+  assetPrefix: './next',
   experimental: {
     esmExternals: false
   },
