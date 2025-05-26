@@ -2,17 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  output: 'export',
+  output: "export",
   trailingSlash: true,
-  distDir: 'out',
+  distDir: "out",
   images: {
-    unoptimized: true
+    unoptimized: true,
   },
-  basePath: '',
-  assetPrefix: '.',
-  experimental: {
-    esmExternals: false
-  },
+  basePath: "",
+  assetPrefix: ".",
   webpack: (config: any, { isServer }: { isServer: boolean }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -20,17 +17,17 @@ const nextConfig: NextConfig = {
         fs: false,
         net: false,
         tls: false,
-      }
+      };
     }
 
     // Handle WebAssembly
     config.experiments = {
       ...config.experiments,
       asyncWebAssembly: true,
-    }
+    };
 
-    return config
-  }
-}
+    return config;
+  },
+};
 
 export default nextConfig;

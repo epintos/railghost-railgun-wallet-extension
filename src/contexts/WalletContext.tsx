@@ -266,7 +266,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         throw new Error("Failed to load wallet");
       }
       const publicWallet = Wallet.fromPhrase(mnemonic);
-      console.log("Loaded wallet:", publicWallet.address);
       const publicBalances = await refreshPublicBalances(publicWallet.address);
       updateState({
         wallet: {
