@@ -38,8 +38,8 @@ export default function WalletSetup() {
             <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mx-auto mb-4 flex items-center justify-center">
               <span className="text-2xl font-bold text-white">R</span>
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Railgun Wallet</h1>
-            <p className="text-gray-300">Privacy-focused cryptocurrency wallet</p>
+            <h1 className="text-3xl font-bold text-white mb-2">RailGhost Wallet</h1>
+            <p className="text-gray-300">Privacy-focused cryptocurrency wallet. Powered by Railgun</p>
           </div>
 
           <div className="space-y-4">

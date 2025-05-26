@@ -208,7 +208,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         mnemonic || Mnemonic.fromEntropy(randomBytes(16)).phrase.trim();
       updateState({ isLoading: true, error: null });
 
-      // Create new Railgun wallet
       const encriptionKey = await setEncryptionKeyFromPassword(password);
       const walletInfo: RailgunWalletInfo = await createRailgunWallet(
         encriptionKey,
@@ -216,7 +215,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         creationBlockNumberMap
       );
 
-      const publicWallet = new Wallet(mnemonic);
+      const publicWallet = Wallet.fromPhrase(mnemonic);
 
       localStorage.setItem("railgun_wallet_id", walletInfo.id);
       const publicBalances = await refreshPublicBalances(publicWallet.address);
